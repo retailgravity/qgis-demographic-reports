@@ -1,0 +1,39 @@
+[general]
+name=US Demographic Reports
+qgisMinimumVersion=3.40
+qgisMaximumVersion=3.99
+description=Generate professional demographic reports and datafills from block group data with proportional area allocation
+version=1.0.0
+author=Retail Gravity
+email=brad@retailgravity.com
+
+about=This plugin generates professional demographic reports and datafills from US Census block group data. It uses proportional area allocation for accurate spatial aggregation. Supports multiple data package tiers (Basic, Expanded, Professional). Features include point-based reports with customizable radius, polygon datafill for custom geographies, PDF report generation with custom branding, CSV export with metadata, and calculated fields (densities, weighted averages, growth rates). Ideal for demographic analysis, market research, and urban planning.
+
+tracker=https://github.com/retailgravity/qgis-demographic-reports/issues
+repository=https://github.com/retailgravity/qgis-demographic-reports
+homepage=https://github.com/retailgravity/qgis-demographic-reports
+
+tags=demographics, census, reporting, analysis, population, statistics, PDF, spatial analysis, block group
+
+category=Analysis
+icon=icon.png
+experimental=False
+deprecated=False
+hasProcessingProvider=no
+server=False
+
+# External dependencies (Python libraries not included in QGIS)
+external_deps=reportlab
+
+changelog=
+    1.0.0 - Initial release
+        - Point-based demographic reporting with radius
+        - Polygon datafill for custom geographies
+        - PDF report generation with custom branding
+        - CSV export with proper rounding and formatting
+        - Support for multiple data package tiers
+        - Proportional area allocation methodology
+        - Calculated fields (densities, weighted averages, growth rates)
+        - Spatial indexing for fast performance
+
+
