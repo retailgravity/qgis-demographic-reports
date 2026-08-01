@@ -205,7 +205,7 @@ class DemoReports:
         polygon_layers = []
         for layer in layers:
             if isinstance(layer, QgsVectorLayer):
-                if layer.geometryType() == QgsWkbTypes.PolygonGeometry:
+                if layer.geometryType() == QgsWkbTypes.GeometryType.PolygonGeometry:
                     polygon_layers.append(layer)
         
         # Add polygon layers to combo boxes
@@ -453,11 +453,11 @@ class DemoReports:
             self.dlg,
             'Save Report',
             'Would you like to save this report as a PDF?',
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
         )
 
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             # Get output file path
             filename, _filter = QFileDialog.getSaveFileName(
                 self.dlg,
@@ -504,11 +504,11 @@ class DemoReports:
                         self.dlg,
                         'Success',
                         f'Report saved successfully!\n\nWould you like to open it?',
-                        QMessageBox.Yes | QMessageBox.No,
-                        QMessageBox.Yes
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.Yes
                     )
-                    
-                    if open_reply == QMessageBox.Yes:
+
+                    if open_reply == QMessageBox.StandardButton.Yes:
                         import subprocess
                         import platform
                         
@@ -545,7 +545,7 @@ class DemoReports:
 
             layout.addWidget(text_browser)
             dialog.setLayout(layout)
-            dialog.exec_()
+            dialog.exec()
 
     def _build_html_report(self, analyses, package):
         """

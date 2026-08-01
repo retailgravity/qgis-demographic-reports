@@ -37,7 +37,7 @@ class PointTool(QgsMapTool):
         self.canvas = canvas
         
         # Create a rubber band to show where user clicked
-        self.rubber_band = QgsRubberBand(self.canvas, QgsWkbTypes.PointGeometry)
+        self.rubber_band = QgsRubberBand(self.canvas, QgsWkbTypes.GeometryType.PointGeometry)
         self.rubber_band.setColor(QColor(255, 0, 0, 180))  # Red, semi-transparent
         self.rubber_band.setWidth(10)
         
@@ -52,7 +52,7 @@ class PointTool(QgsMapTool):
         point = self.toMapCoordinates(event.pos())
         
         # Clear any previous marker
-        self.rubber_band.reset(QgsWkbTypes.PointGeometry)
+        self.rubber_band.reset(QgsWkbTypes.GeometryType.PointGeometry)
         
         # Add new marker at clicked location
         self.rubber_band.addPoint(point)
@@ -65,7 +65,7 @@ class PointTool(QgsMapTool):
         Called when the tool is deactivated.
         Clears the rubber band marker.
         """
-        self.rubber_band.reset(QgsWkbTypes.PointGeometry)
+        self.rubber_band.reset(QgsWkbTypes.GeometryType.PointGeometry)
         QgsMapTool.deactivate(self)
         
     def activate(self):
