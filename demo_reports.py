@@ -25,7 +25,7 @@ from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 from qgis.PyQt.QtWidgets import QMessageBox, QFileDialog
-from qgis.core import QgsProject, QgsVectorLayer, QgsWkbTypes
+from qgis.core import Qgis, QgsProject, QgsVectorLayer, QgsWkbTypes
 from qgis.PyQt.QtWidgets import QTextBrowser, QDialog, QVBoxLayout
 
 # Initialize Qt resources from file resources.py
@@ -271,8 +271,8 @@ class DemoReports:
         self.iface.messageBar().pushMessage(
             "Point Selection",
             "Click on the map to select a location for your report",
-            level=0,  # Info level
-            duration=5
+            Qgis.MessageLevel.Info,
+            5
         )
     
     def _read_radii_miles(self):
@@ -427,8 +427,8 @@ class DemoReports:
         self.iface.messageBar().pushMessage(
             "Success",
             "Point selected! You can now generate a report.",
-            level=3,  # Success level
-            duration=3
+            Qgis.MessageLevel.Success,
+            3
         )
         
         # Show the dialog again
