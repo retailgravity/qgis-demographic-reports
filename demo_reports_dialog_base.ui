@@ -78,25 +78,15 @@
           <item>
            <widget class="QLabel" name="label_3">
             <property name="text">
-             <string>Click map to select location, then enter radius:</string>
+             <string>Click map to select location:</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QSplitter" name="splitter">
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
+           <widget class="QPushButton" name="selectPointButton">
+            <property name="text">
+             <string>Select Point on Map</string>
             </property>
-            <widget class="QPushButton" name="selectPointButton">
-             <property name="text">
-              <string>Select Point on Map</string>
-             </property>
-            </widget>
-            <widget class="QLineEdit" name="radiusLineEdit">
-             <property name="placeholderText">
-              <string>Radius in miles</string>
-             </property>
-            </widget>
            </widget>
           </item>
           <item>
@@ -105,6 +95,59 @@
              <string>Selected Location: (none)</string>
             </property>
            </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="radiiLabel">
+            <property name="text">
+             <string>Enter up to 3 radii in miles (cumulative rings, low to high). Radius 1 is required:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QGridLayout" name="radiusGridLayout">
+            <item row="0" column="0">
+             <widget class="QLabel" name="radius1Label">
+              <property name="text">
+               <string>Radius 1 (miles)</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QLineEdit" name="radiusLineEdit">
+              <property name="placeholderText">
+               <string>e.g. 1</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="radius2Label">
+              <property name="text">
+               <string>Radius 2 (miles, optional)</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QLineEdit" name="radius2LineEdit">
+              <property name="placeholderText">
+               <string>e.g. 3</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="radius3Label">
+              <property name="text">
+               <string>Radius 3 (miles, optional)</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QLineEdit" name="radius3LineEdit">
+              <property name="placeholderText">
+               <string>e.g. 5</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </item>
          </layout>
         </widget>

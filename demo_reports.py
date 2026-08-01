@@ -275,23 +275,69 @@ class DemoReports:
             duration=5
         )
     
+    def _read_radii_miles(self):
+        """
+        Read up to 3 radii from the dialog's radius fields.
+        Radius 1 is required; radii 2 and 3 are optional and may be left blank.
+
+        Returns:
+            list[float] or None - Radii in miles (ascending), or None if validation
+            failed (a warning has already been shown to the user).
+        """
+        radius_fields = [
+            ("Radius 1", self.dlg.radiusLineEdit, True),
+            ("Radius 2", self.dlg.radius2LineEdit, False),
+            ("Radius 3", self.dlg.radius3LineEdit, False),
+        ]
+
+        radii_miles = []
+        for label, field, required in radius_fields:
+            text = field.text().strip()
+            if not text:
+                if required:
+                    QMessageBox.warning(self.dlg, "Error", "Please enter at least Radius 1 in miles")
+                    return None
+                continue
+
+            try:
+                radius = float(text)
+                if radius <= 0:
+                    raise ValueError("Radius must be positive")
+            except ValueError:
+                QMessageBox.warning(self.dlg, "Error", f"Invalid {label}: '{text}' is not a positive number")
+                return None
+
+            radii_miles.append(radius)
+
+        # Cumulative rings must be entered smallest to largest
+        for i in range(1, len(radii_miles)):
+            if radii_miles[i] <= radii_miles[i - 1]:
+                QMessageBox.warning(
+                    self.dlg,
+                    "Error",
+                    f"Radii must increase from Radius 1 to Radius {i + 1} (each radius must be larger than the previous)"
+                )
+                return None
+
+        return radii_miles
+
     def generate_point_report(self):
         """
-        Generate demographic report for selected point and radius.
-        Uses proportional area allocation for block groups.
+        Generate demographic report for selected point across up to 3 radii.
+        Each radius produces a cumulative circular buffer; uses proportional
+        area allocation for block groups.
         """
         print("=== Starting Point Report Generation ===")
-        
+
         # Get inputs
         package = self.dlg.packageComboBox.currentText()
         layer = self.get_layer_from_combo(self.dlg.blockGroupLayerComboBox)
-        radius_text = self.dlg.radiusLineEdit.text()
-        
+
         # Validate layer selection
         if not layer:
             QMessageBox.warning(self.dlg, "Error", "Please select a block group layer")
             return
-        
+
         # Validate point selection
         if not self.selected_point:
             QMessageBox.warning(
@@ -300,30 +346,19 @@ class DemoReports:
                 "Please click 'Select Point on Map' and choose a location first"
             )
             return
-        
-        # Validate radius
-        if not radius_text:
-            QMessageBox.warning(self.dlg, "Error", "Please enter a radius in miles")
+
+        # Validate radii
+        radii_miles = self._read_radii_miles()
+        if radii_miles is None:
             return
-        
-        try:
-            radius_miles = float(radius_text)
-            if radius_miles <= 0:
-                raise ValueError("Radius must be positive")
-            # Convert miles to meters (1 mile = 1609.34 meters)
-            radius_meters = radius_miles * 1609.34
-            print(f"Radius: {radius_miles} miles = {radius_meters:.2f} meters")
-        except ValueError as e:
-            QMessageBox.warning(self.dlg, "Error", f"Invalid radius: {str(e)}")
-            return
-        
+
         # Get variables for this package
         variables = get_package_variables(package)
-        
+
         if not variables:
             QMessageBox.warning(self.dlg, "Error", f"No variables defined for {package}")
             return
-        
+
         # Validate layer has required fields
         is_valid, missing, msg = validate_layer_for_analysis(layer, variables)
         if not is_valid:
@@ -333,42 +368,46 @@ class DemoReports:
                 f"{msg}\n\nMissing variables: {', '.join(missing[:10])}"
             )
             return
-        
+
         print("✓ Validation passed")
         print(f"  Package: {package}")
         print(f"  Layer: {layer.name()}")
         print(f"  Point: {self.selected_point.x():.6f}, {self.selected_point.y():.6f}")
-        print(f"  Radius: {radius_miles} miles ({radius_meters:.2f} meters)")
+        print(f"  Radii: {radii_miles} miles")
         print(f"  Variables: {len(variables)}")
-        
+
         # Create spatial processor
         processor = SpatialProcessor()
-        
-        # Create buffer around selected point (using meters)
-        print("Creating buffer...")
-        buffer_geom = processor.create_buffer(
-            self.selected_point,
-            radius_meters,
-            layer.crs()
-        )
-        
-        # Aggregate demographic data
-        print("Aggregating demographic data...")
-        # Now pass layer.crs() as the analysis_crs parameter
-        results, metadata = processor.aggregate_demographics(
-            layer,
-            buffer_geom,
-            layer.crs(),  
-            variables,
-            package
-        )
-        
-        print("✓ Aggregation complete")
-        print(f"  Block groups processed: {metadata['block_groups_processed']}")
-        print(f"  Block groups intersecting: {metadata['block_groups_intersecting']}")
-        
-        # Display results (pass miles for display)
-        self.display_report_results(results, metadata, package, radius_miles)
+
+        # Run each radius as an independent cumulative buffer + aggregation
+        analyses = []  # list of (radius_miles, results, metadata)
+        for radius_miles in radii_miles:
+            # Convert miles to meters (1 mile = 1609.34 meters)
+            radius_meters = radius_miles * 1609.34
+            print(f"Creating buffer: {radius_miles} miles = {radius_meters:.2f} meters")
+            buffer_geom = processor.create_buffer(
+                self.selected_point,
+                radius_meters,
+                layer.crs()
+            )
+
+            print(f"Aggregating demographic data for {radius_miles} mi radius...")
+            results, metadata = processor.aggregate_demographics(
+                layer,
+                buffer_geom,
+                layer.crs(),
+                variables,
+                package
+            )
+
+            print(f"✓ Aggregation complete for {radius_miles} mi")
+            print(f"  Block groups processed: {metadata['block_groups_processed']}")
+            print(f"  Block groups intersecting: {metadata['block_groups_intersecting']}")
+
+            analyses.append((radius_miles, results, metadata))
+
+        # Display results for all radii
+        self.display_report_results(analyses, package)
 
     def point_selected(self, point):
         """
@@ -398,18 +437,17 @@ class DemoReports:
         # Deactivate the point tool
         self.iface.mapCanvas().unsetMapTool(self.point_tool)
         
-    def display_report_results(self, results, metadata, package, radius_miles):
+    def display_report_results(self, analyses, package):
         """
         Display aggregated demographic results and offer to save as PDF.
-        
+
         Args:
-            results: dict - Aggregated demographic values
-            metadata: dict - Processing metadata
+            analyses: list[tuple] - (radius_miles, results, metadata) for each radius,
+                sorted ascending
             package: str - Package name
-            radius_miles: float - Analysis radius in miles
         """
         from qgis.PyQt.QtWidgets import QMessageBox
-        
+
         # Ask user if they want to save as PDF
         reply = QMessageBox.question(
             self.dlg,
@@ -418,7 +456,7 @@ class DemoReports:
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )
-        
+
         if reply == QMessageBox.Yes:
             # Get output file path
             filename, _filter = QFileDialog.getSaveFileName(
@@ -427,40 +465,38 @@ class DemoReports:
                 "",
                 "PDF Files (*.pdf)"
             )
-            
+
             if filename:
                 # Make sure it has .pdf extension
                 if not filename.lower().endswith('.pdf'):
                     filename += '.pdf'
-                
+
                 # Generate PDF
                 try:
                     from .package_config import VARIABLE_CATEGORIES, VARIABLE_DEFINITIONS
-                    
+
                     # CUSTOMIZE THESE VALUES FOR YOUR BRANDING
                     # Put your logo file in the plugin directory, or use full path
                     logo_path = os.path.join(self.plugin_dir, "logo.png")  # Change to your logo filename
                     if not os.path.exists(logo_path):
                         logo_path = None  # If logo doesn't exist, don't use it
-                    
+
                     generator = DemographicPDFGenerator(
                         logo_path=logo_path,
                         company_name="Retail Gravity",  # CHANGE THIS
                         website="www.retailgravity.com",     # CHANGE THIS
                         brand_color="#3498db"              # CHANGE THIS to your brand color (hex code)
                     )
-                    
+
                     generator.generate_point_report(
                         filename,
-                        results,
-                        metadata,
+                        analyses,
                         package,
-                        radius_miles,
                         (self.selected_point.x(), self.selected_point.y()),
                         VARIABLE_CATEGORIES,
                         VARIABLE_DEFINITIONS
                     )
-                    
+
                     print(f"✓ PDF report saved to: {filename}")
                     
                     # Ask if user wants to open the PDF
@@ -498,37 +534,35 @@ class DemoReports:
             dialog = QDialog(self.dlg)
             dialog.setWindowTitle("Demographic Report Results")
             dialog.resize(600, 800)
-            
+
             from qgis.PyQt.QtWidgets import QVBoxLayout, QTextBrowser
             layout = QVBoxLayout()
             text_browser = QTextBrowser()
             text_browser.setOpenExternalLinks(False)
-            
-            html = self._build_html_report(results, metadata, package, radius_miles)
+
+            html = self._build_html_report(analyses, package)
             text_browser.setHtml(html)
-            
+
             layout.addWidget(text_browser)
             dialog.setLayout(layout)
             dialog.exec_()
-    
-    def _build_html_report(self, results, metadata, package, radius):
+
+    def _build_html_report(self, analyses, package):
         """
-        Build HTML formatted report from results.
-        
+        Build HTML formatted report from results, with one column per radius.
+
         Args:
-            results: dict - Aggregated values
-            metadata: dict - Processing metadata
+            analyses: list[tuple] - (radius_miles, results, metadata) for each radius,
+                sorted ascending
             package: str - Package name
-            radius: float - Analysis radius in MILES
-        
+
         Returns:
             str - HTML formatted report
         """
         from .package_config import VARIABLE_CATEGORIES, VARIABLE_DEFINITIONS
-        
-        # Convert miles to km for display
-        radius_km = radius * 1.60934
-        
+
+        column_labels = [f"{radius_miles:.2f} mi" for radius_miles, _, _ in analyses]
+
         html = f"""
         <html>
         <head>
@@ -537,60 +571,76 @@ class DemoReports:
                 h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
                 h2 {{ color: #34495e; margin-top: 30px; border-bottom: 1px solid #bdc3c7; }}
                 .metadata {{ background-color: #ecf0f1; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
-                .variable {{ margin: 10px 0; padding: 8px; background-color: #f8f9fa; border-left: 3px solid #3498db; }}
-                .variable-name {{ font-weight: bold; color: #2c3e50; }}
+                .definition {{ font-size: 0.85em; color: #7f8c8d; font-style: italic; }}
+                table.radii-table {{ width: 100%; border-collapse: collapse; margin: 10px 0 20px 0; }}
+                table.radii-table th, table.radii-table td {{ border: 1px solid #bdc3c7; padding: 6px 8px; text-align: right; }}
+                table.radii-table th:first-child, table.radii-table td:first-child {{ text-align: left; }}
+                table.radii-table th {{ background-color: #182839; color: white; }}
+                table.radii-table tr:nth-child(even) {{ background-color: #f8f9fa; }}
                 .variable-value {{ color: #27ae60; font-weight: bold; }}
-                .definition {{ font-size: 0.9em; color: #7f8c8d; font-style: italic; }}
             </style>
         </head>
         <body>
             <h1>Demographic Report</h1>
-            
+
             <div class="metadata">
                 <strong>Package:</strong> {package}<br>
-                <strong>Analysis Radius:</strong> {radius:.2f} miles ({radius_km:.2f} km)<br>
-                <strong>Analysis Area:</strong> {metadata.get('total_analysis_area_sqm', 0)/1000000:.2f} sq km<br>
-                <strong>Block Groups Processed:</strong> {metadata.get('block_groups_processed', 0)}<br>
-                <strong>Block Groups Intersecting:</strong> {metadata.get('block_groups_intersecting', 0)}
+                <strong>Analysis Radii:</strong> {', '.join(column_labels)}
             </div>
         """
-        
-        # Group variables by category
+
+        for radius_miles, results, metadata in analyses:
+            radius_km = radius_miles * 1.60934
+            html += f"""
+            <div class="metadata">
+                <strong>{radius_miles:.2f} mi ({radius_km:.2f} km):</strong>
+                Analysis Area {metadata.get('total_analysis_area_sqm', 0)/1000000:.2f} sq km |
+                Block Groups Processed: {metadata.get('block_groups_processed', 0)} |
+                Block Groups Intersecting: {metadata.get('block_groups_intersecting', 0)}
+            </div>
+            """
+
+        # Group variables by category, one row per variable, one column per radius
+        first_results = analyses[0][1]
         for category, var_list in VARIABLE_CATEGORIES.items():
             # Check if any variables in this category are in results
-            category_vars = [v for v in var_list if v in results]
-            
+            category_vars = [v for v in var_list if v in first_results]
+
             if not category_vars:
                 continue
-            
+
             html += f"<h2>{category}</h2>"
-            
+            html += "<table class='radii-table'><tr><th>Variable</th>"
+            for label in column_labels:
+                html += f"<th>{label}</th>"
+            html += "</tr>"
+
             for var in category_vars:
-                value = results[var]
                 definition = VARIABLE_DEFINITIONS.get(var, "No definition available")
-                
-                # Format value based on type
-                if isinstance(value, float):
-                    if value > 1000:
-                        formatted_value = f"{value:,.0f}"
+                html += f"<tr><td>{var}<br><span class='definition'>{definition}</span></td>"
+
+                for _, results, _ in analyses:
+                    value = results.get(var, 0)
+                    # Format value based on type
+                    if isinstance(value, float):
+                        if value > 1000:
+                            formatted_value = f"{value:,.0f}"
+                        else:
+                            formatted_value = f"{value:,.2f}"
                     else:
-                        formatted_value = f"{value:,.2f}"
-                else:
-                    formatted_value = str(value)
-                
-                html += f"""
-                <div class="variable">
-                    <span class="variable-name">{var}:</span> 
-                    <span class="variable-value">{formatted_value}</span><br>
-                    <span class="definition">{definition}</span>
-                </div>
-                """
-        
+                        formatted_value = str(value)
+
+                    html += f"<td class='variable-value'>{formatted_value}</td>"
+
+                html += "</tr>"
+
+            html += "</table>"
+
         html += """
         </body>
         </html>
         """
-        
+
         return html
     
     def generate_datafill(self):

@@ -9,11 +9,12 @@ Professional demographic reporting plugin for QGIS. Generate reports and datafil
 
 ### Point Reports
 - Click anywhere on the map to select a location
-- Specify a radius (in miles) for your analysis area
+- Specify up to 3 radii (in miles) for cumulative analysis rings — e.g. 1, 3, and 5 miles, each including everything inside the smaller radii
 - Generate professional PDF reports with:
   - Proper formatting (currency, percentages, years)
   - Custom branding (logo and company colors)
   - Organized by demographic categories
+  - One column per radius, side by side, for easy comparison
   - Metadata about the analysis area
 
 ### Polygon Datafill
@@ -95,9 +96,9 @@ Your demographic data should be joined to a block group geography layer:
 4. Select your block group layer from the dropdown
 5. Click **Select Point on Map**
 6. Click anywhere on the map
-7. Enter a radius in miles (e.g., `1.0` for 1 mile)
+7. Enter Radius 1 in miles (e.g., `1.0` for 1 mile). Optionally enter Radius 2 and/or Radius 3 for additional cumulative rings (e.g., `3.0`, `5.0`) — each radius must be larger than the last
 8. Click **Generate Report**
-9. Choose to save as PDF or view in browser
+9. Choose to save as PDF or view in browser — results are shown side by side, one column per radius
 
 ### Generating a Datafill
 
@@ -304,6 +305,10 @@ Special thanks to:
 
 ## Changelog
 
+### Version 1.1.0 (2026-08-01)
+- Point reports now support up to 3 radii (cumulative rings) instead of a single radius
+- PDF and in-app reports lay out multi-radius results as side-by-side columns
+
 ### Version 1.0.0 (2026-01-27)
 - Initial release
 - Point-based reporting with customizable radius
@@ -318,7 +323,7 @@ Special thanks to:
 
 Future enhancements may include:
 - Bulk PDF reports
-- Multiple radii
+- Drive-time isochrones (via Valhalla) as an alternative to radius-based rings
 - Multiple output format options
 - Bulk processing from point list
 - Comparison reports between areas
