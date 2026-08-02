@@ -183,23 +183,24 @@ class DemographicPDFGenerator:
         footer = Paragraph(footer_text, self.styles['Footer'])
         story.append(footer)
     
-    def generate_point_report(self, output_path, results, metadata, package, radius_miles, 
+    def generate_point_report(self, output_path, analyses, package,
                             location_coords, variable_categories, variable_definitions):
         """
-        Generate a PDF report for a point-based demographic analysis.
-        
+        Generate a PDF report for a point-based demographic analysis, with one
+        column of values per radius (up to 3), side by side.
+
         Args:
             output_path: str - Path where PDF will be saved
-            results: dict - Aggregated demographic values
-            metadata: dict - Processing metadata
+            analyses: list[tuple] - (radius_miles, results, metadata) for each
+                radius, sorted ascending. Each radius is an independent cumulative
+                buffer, so larger radii already include everything within smaller ones.
             package: str - Package name
-            radius_miles: float - Analysis radius in miles
             location_coords: tuple - (x, y) coordinates of selected point
             variable_categories: dict - Variables organized by category
             variable_definitions: dict - Variable definitions
         """
         from .formatting_utils import format_value_for_display
-        
+
         # Create PDF document
         doc = SimpleDocTemplate(
             output_path,
@@ -209,72 +210,82 @@ class DemographicPDFGenerator:
             topMargin=0.5*inch,
             bottomMargin=0.5*inch
         )
-        
+
         # Container for PDF elements
         story = []
-        
+
         # Add header with branding
         self._add_header(story)
-        
+
         # Add title
         title = Paragraph("Demographic Report", self.styles['CustomTitle'])
         story.append(title)
         story.append(Spacer(1, 0.15*inch))
-        
+
         # Add report metadata
-        radius_km = radius_miles * 1.60934
         report_date = datetime.now().strftime("%B %d, %Y at %I:%M %p")
-        
+        radius_summary = "  |  ".join(
+            f"{radius_miles:.2f} mi ({radius_miles * 1.60934:.2f} km)"
+            for radius_miles, _, _ in analyses
+        )
+
         metadata_text = f"""
         <b>Report Generated:</b> {report_date}   |  <b>Data Package:</b> {package}<br/>
-        <b>Analysis Location:</b> {location_coords[1]:.6f}, {location_coords[0]:.6f}   |   <b>Analysis Radius:</b> {radius_miles:.2f} miles ({radius_km:.2f} km)
+        <b>Analysis Location:</b> {location_coords[1]:.6f}, {location_coords[0]:.6f}<br/>
+        <b>Analysis Radii (cumulative):</b> {radius_summary}
         """
-        
+
         metadata_para = Paragraph(metadata_text, self.styles['Metadata'])
         story.append(metadata_para)
         story.append(Spacer(1, 0.2*inch))
-        
+
+        # Column layout: description column + one value column per radius
+        num_radii = len(analyses)
+        value_col_width = 0.9 * inch
+        desc_col_width = 7 * inch - (value_col_width * num_radii)
+        col_widths = [desc_col_width] + [value_col_width] * num_radii
+
+        header_row = ['Variable'] + [f"{radius_miles:.2f} mi" for radius_miles, _, _ in analyses]
+
         # Add detailed data by category
-        # Process each category
+        first_results = analyses[0][1]
         for category, var_list in variable_categories.items():
             # Check if any variables in this category are in results
-            category_vars = [v for v in var_list if v in results and v != 'BGID']
-            
+            category_vars = [v for v in var_list if v in first_results and v != 'BGID']
+
             if not category_vars:
                 continue
-            
-            # Category header
-            # story.append(Paragraph(category, self.styles['CategoryHeader']))
-            
+
             # Create table data for this category - use category name as header
-            table_data = [[category, 'Value']]
-            
+            table_data = [[category] + header_row[1:]]
+
             for var in category_vars:
-                value = results[var]
                 definition = variable_definitions.get(var, var)
-                
+
                 # Clean the description
                 cleaned_def = self._clean_description(definition)
-                
+
                 # Add variable name in parentheses
                 description_with_var = f"{cleaned_def} ({var})"
-                
-                # Format value according to variable type
-                formatted_value = format_value_for_display(var, value)
-                
-                table_data.append([description_with_var, formatted_value])
-            
-            # Create and style the table - adjusted column widths for 2 columns
+
+                row = [description_with_var]
+                for _, results, _ in analyses:
+                    value = results.get(var, 0)
+                    row.append(format_value_for_display(var, value))
+
+                table_data.append(row)
+
+            # Create and style the table
             category_table = Table(
-                table_data, 
-                colWidths=[5.5*inch, 1.5*inch]
+                table_data,
+                colWidths=col_widths
             )
-            
+
             category_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#182839')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
@@ -287,15 +298,15 @@ class DemographicPDFGenerator:
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
             ]))
-            
+
             # Keep category header and table together
             story.append(category_table)
             story.append(Spacer(1, 0.15*inch))
-        
+
         # Add footer with branding
         self._add_footer(story)
-        
+
         # Build PDF
         doc.build(story)
-        
+
         return output_path

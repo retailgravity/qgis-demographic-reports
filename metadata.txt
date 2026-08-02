@@ -1,9 +1,9 @@
 [general]
 name=US Demographic Reports
 qgisMinimumVersion=3.40
-qgisMaximumVersion=3.99
+qgisMaximumVersion=4.99
 description=Generate professional demographic reports and datafills from block group data with proportional area allocation
-version=1.0.0
+version=1.1.0
 author=Retail Gravity
 email=brad@retailgravity.com
 
@@ -26,6 +26,10 @@ server=False
 external_deps=reportlab
 
 changelog=
+    1.1.0 - Multi-radius point reports
+        - Point reports support up to 3 radii (cumulative rings) instead of a single radius
+        - PDF and in-app reports lay out multi-radius results as side-by-side columns
+
     1.0.0 - Initial release
         - Point-based demographic reporting with radius
         - Polygon datafill for custom geographies
