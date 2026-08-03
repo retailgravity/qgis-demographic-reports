@@ -184,22 +184,27 @@ class DemographicPDFGenerator:
         story.append(footer)
     
     def generate_point_report(self, output_path, analyses, package,
-                            location_coords, variable_categories, variable_definitions):
+                            location_coords, variable_categories, variable_definitions,
+                            area_unit='mi'):
         """
         Generate a PDF report for a point-based demographic analysis, with one
-        column of values per radius (up to 3), side by side.
+        column of values per analysis area (up to 3), side by side.
 
         Args:
             output_path: str - Path where PDF will be saved
-            analyses: list[tuple] - (radius_miles, results, metadata) for each
-                radius, sorted ascending. Each radius is an independent cumulative
-                buffer, so larger radii already include everything within smaller ones.
+            analyses: list[tuple] - (area_value, results, metadata) for each
+                analysis area, sorted ascending. area_value is radius-miles when
+                area_unit='mi' or drive-time-minutes when area_unit='min'. Each area
+                is cumulative, so larger areas already include everything smaller.
             package: str - Package name
             location_coords: tuple - (x, y) coordinates of selected point
             variable_categories: dict - Variables organized by category
             variable_definitions: dict - Variable definitions
+            area_unit: str - 'mi' for radius miles, 'min' for drive-time minutes
         """
-        from .formatting_utils import format_value_for_display
+        from .formatting_utils import (
+            format_value_for_display, format_area_label, format_area_caption
+        )
 
         # Create PDF document
         doc = SimpleDocTemplate(
@@ -224,28 +229,31 @@ class DemographicPDFGenerator:
 
         # Add report metadata
         report_date = datetime.now().strftime("%B %d, %Y at %I:%M %p")
-        radius_summary = "  |  ".join(
-            f"{radius_miles:.2f} mi ({radius_miles * 1.60934:.2f} km)"
-            for radius_miles, _, _ in analyses
+        area_summary = "  |  ".join(
+            format_area_caption(area_value, area_unit)
+            for area_value, _, _ in analyses
         )
+        area_heading = "Analysis Drive Times" if area_unit == 'min' else "Analysis Radii"
 
         metadata_text = f"""
         <b>Report Generated:</b> {report_date}   |  <b>Data Package:</b> {package}<br/>
         <b>Analysis Location:</b> {location_coords[1]:.6f}, {location_coords[0]:.6f}<br/>
-        <b>Analysis Radii (cumulative):</b> {radius_summary}
+        <b>{area_heading} (cumulative):</b> {area_summary}
         """
 
         metadata_para = Paragraph(metadata_text, self.styles['Metadata'])
         story.append(metadata_para)
         story.append(Spacer(1, 0.2*inch))
 
-        # Column layout: description column + one value column per radius
-        num_radii = len(analyses)
+        # Column layout: description column + one value column per analysis area
+        num_areas = len(analyses)
         value_col_width = 0.9 * inch
-        desc_col_width = 7 * inch - (value_col_width * num_radii)
-        col_widths = [desc_col_width] + [value_col_width] * num_radii
+        desc_col_width = 7 * inch - (value_col_width * num_areas)
+        col_widths = [desc_col_width] + [value_col_width] * num_areas
 
-        header_row = ['Variable'] + [f"{radius_miles:.2f} mi" for radius_miles, _, _ in analyses]
+        header_row = ['Variable'] + [
+            format_area_label(area_value, area_unit) for area_value, _, _ in analyses
+        ]
 
         # Add detailed data by category
         first_results = analyses[0][1]
@@ -302,6 +310,16 @@ class DemographicPDFGenerator:
             # Keep category header and table together
             story.append(category_table)
             story.append(Spacer(1, 0.15*inch))
+
+        # Drive-time data attribution (required when isochrones are used)
+        if area_unit == 'min':
+            story.append(Spacer(1, 0.1*inch))
+            attribution = Paragraph(
+                "Drive-time areas &copy; OpenStreetMap contributors, via the "
+                "Valhalla routing engine (FOSSGIS e.V.). Road data licensed under ODbL.",
+                self.styles['Metadata']
+            )
+            story.append(attribution)
 
         # Add footer with branding
         self._add_footer(story)

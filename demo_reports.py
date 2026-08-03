@@ -25,7 +25,10 @@ from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 from qgis.PyQt.QtWidgets import QMessageBox, QFileDialog
-from qgis.core import Qgis, QgsProject, QgsVectorLayer, QgsWkbTypes
+from qgis.core import (
+    Qgis, QgsProject, QgsVectorLayer, QgsWkbTypes,
+    QgsGeometry, QgsCoordinateReferenceSystem, QgsCoordinateTransform,
+)
 from qgis.PyQt.QtWidgets import QTextBrowser, QDialog, QVBoxLayout
 
 # Initialize Qt resources from file resources.py
@@ -40,7 +43,13 @@ from .spatial_processor import SpatialProcessor, validate_layer_for_analysis
 from .package_config import get_package_variables
 from .pdf_generator import DemographicPDFGenerator
 from .formatting_utils import format_value_for_csv
+from .routing import get_drive_time_isochrones, RoutingError
 import os.path
+
+# QSettings key holding the user-configured Valhalla drive-time server URL.
+# Ships empty in the public build; each user opts in / configures their own
+# (Brad's own copy is pre-set to the public FOSSGIS server).
+SETTINGS_KEY_VALHALLA_URL = "RetailGravity/DemographicReports/valhalla_url"
 
 class DemoReports:
     """QGIS Plugin Implementation."""
@@ -321,11 +330,158 @@ class DemoReports:
 
         return radii_miles
 
+    def _analysis_mode(self):
+        """Return 'drivetime' if the drive-time option is selected, else 'radius'."""
+        return 'drivetime' if self.dlg.analysisTypeComboBox.currentIndex() == 1 else 'radius'
+
+    def _on_analysis_type_changed(self, *args):
+        """Relabel the input fields and toggle the routing-server field for the mode."""
+        drive = self._analysis_mode() == 'drivetime'
+        if drive:
+            self.dlg.radiiLabel.setText(
+                "Enter up to 3 drive times in minutes (cumulative, low to high). "
+                "Drive time 1 is required:"
+            )
+            self.dlg.radius1Label.setText("Drive time 1 (minutes)")
+            self.dlg.radius2Label.setText("Drive time 2 (minutes, optional)")
+            self.dlg.radius3Label.setText("Drive time 3 (minutes, optional)")
+            self.dlg.radiusLineEdit.setPlaceholderText("e.g. 5")
+            self.dlg.radius2LineEdit.setPlaceholderText("e.g. 10")
+            self.dlg.radius3LineEdit.setPlaceholderText("e.g. 15")
+        else:
+            self.dlg.radiiLabel.setText(
+                "Enter up to 3 radii in miles (cumulative rings, low to high). "
+                "Radius 1 is required:"
+            )
+            self.dlg.radius1Label.setText("Radius 1 (miles)")
+            self.dlg.radius2Label.setText("Radius 2 (miles, optional)")
+            self.dlg.radius3Label.setText("Radius 3 (miles, optional)")
+            self.dlg.radiusLineEdit.setPlaceholderText("e.g. 1")
+            self.dlg.radius2LineEdit.setPlaceholderText("e.g. 3")
+            self.dlg.radius3LineEdit.setPlaceholderText("e.g. 5")
+        # The routing-server field only applies to drive-time mode
+        self.dlg.routingServerLabel.setEnabled(drive)
+        self.dlg.routingServerLineEdit.setEnabled(drive)
+
+    def _save_routing_server(self):
+        """Persist the drive-time server URL so it survives across QGIS sessions."""
+        url = self.dlg.routingServerLineEdit.text().strip()
+        QSettings().setValue(SETTINGS_KEY_VALHALLA_URL, url)
+
+    def _read_default_server_seed(self):
+        """
+        Return a pre-configured routing-server URL shipped with this install, or "".
+
+        Reads the first non-empty line of 'default_server.txt' in the plugin dir if
+        present. The public/open-source build does not ship this file, so drive-time
+        mode stays un-configured until the user opts in.
+        """
+        seed_path = os.path.join(self.plugin_dir, "default_server.txt")
+        try:
+            with open(seed_path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        return line
+        except OSError:
+            pass
+        return ""
+
+    def _read_drive_times(self):
+        """
+        Read up to 3 drive times (minutes) from the dialog's input fields.
+        Drive time 1 is required; 2 and 3 are optional. Must increase low to high.
+
+        Returns:
+            list[float] or None - Drive times in minutes (ascending), or None if
+            validation failed (a warning has already been shown to the user).
+        """
+        time_fields = [
+            ("Drive time 1", self.dlg.radiusLineEdit, True),
+            ("Drive time 2", self.dlg.radius2LineEdit, False),
+            ("Drive time 3", self.dlg.radius3LineEdit, False),
+        ]
+
+        minutes = []
+        for label, field, required in time_fields:
+            text = field.text().strip()
+            if not text:
+                if required:
+                    QMessageBox.warning(self.dlg, "Error", "Please enter at least Drive time 1 in minutes")
+                    return None
+                continue
+
+            try:
+                value = float(text)
+                if value <= 0:
+                    raise ValueError("Drive time must be positive")
+            except ValueError:
+                QMessageBox.warning(self.dlg, "Error", f"Invalid {label}: '{text}' is not a positive number")
+                return None
+
+            minutes.append(value)
+
+        # Cumulative drive times must be entered smallest to largest
+        for i in range(1, len(minutes)):
+            if minutes[i] <= minutes[i - 1]:
+                QMessageBox.warning(
+                    self.dlg,
+                    "Error",
+                    f"Drive times must increase from Drive time 1 to Drive time {i + 1} (each must be larger than the previous)"
+                )
+                return None
+
+        return minutes
+
+    def _build_radius_areas(self, radii_miles, processor, layer):
+        """Return [(radius_miles, buffer_geom, layer_crs), ...], one per radius."""
+        areas = []
+        for radius_miles in radii_miles:
+            # Convert miles to meters (1 mile = 1609.34 meters)
+            radius_meters = radius_miles * 1609.34
+            print(f"Creating buffer: {radius_miles} miles = {radius_meters:.2f} meters")
+            buffer_geom = processor.create_buffer(
+                self.selected_point,
+                radius_meters,
+                layer.crs()
+            )
+            areas.append((radius_miles, buffer_geom, layer.crs()))
+        return areas
+
+    def _build_drive_time_areas(self, minutes_list, layer):
+        """
+        Return [(minutes, isochrone_geom, wgs84_crs), ...] from the routing server.
+
+        Raises RoutingError (handled by the caller) when no server is configured
+        or the request fails.
+        """
+        server_url = QSettings().value(SETTINGS_KEY_VALHALLA_URL, "", type=str)
+
+        # Transform the selected point (assumed to be in the layer CRS, same as the
+        # radius path) to WGS84 lon/lat for the routing request.
+        wgs84 = QgsCoordinateReferenceSystem('EPSG:4326')
+        point_geom = QgsGeometry.fromPointXY(self.selected_point)
+        if layer.crs() != wgs84:
+            transform = QgsCoordinateTransform(layer.crs(), wgs84, QgsProject.instance())
+            point_geom.transform(transform)
+        lon = point_geom.asPoint().x()
+        lat = point_geom.asPoint().y()
+
+        print(f"Requesting drive-time isochrones ({minutes_list} min) from routing server...")
+        isochrones = get_drive_time_isochrones(server_url, lon, lat, minutes_list)
+
+        areas = []
+        for minutes, geom in isochrones:
+            areas.append((minutes if minutes is not None else 0.0, geom, wgs84))
+        return areas
+
     def generate_point_report(self):
         """
-        Generate demographic report for selected point across up to 3 radii.
-        Each radius produces a cumulative circular buffer; uses proportional
-        area allocation for block groups.
+        Generate a demographic report for the selected point across up to 3
+        analysis areas. Depending on the chosen Analysis type, each area is either
+        a cumulative circular buffer (radius in miles) or a cumulative drive-time
+        isochrone (minutes, from a Valhalla routing server). Both paths feed the
+        same proportional-area aggregation.
         """
         print("=== Starting Point Report Generation ===")
 
@@ -347,9 +503,13 @@ class DemoReports:
             )
             return
 
-        # Validate radii
-        radii_miles = self._read_radii_miles()
-        if radii_miles is None:
+        # Determine analysis mode (radius vs drive time) and read its inputs
+        mode = self._analysis_mode()
+        if mode == 'drivetime':
+            area_values = self._read_drive_times()
+        else:
+            area_values = self._read_radii_miles()
+        if area_values is None:
             return
 
         # Get variables for this package
@@ -373,41 +533,49 @@ class DemoReports:
         print(f"  Package: {package}")
         print(f"  Layer: {layer.name()}")
         print(f"  Point: {self.selected_point.x():.6f}, {self.selected_point.y():.6f}")
-        print(f"  Radii: {radii_miles} miles")
+        print(f"  Mode: {mode}   Areas: {area_values}")
         print(f"  Variables: {len(variables)}")
 
         # Create spatial processor
         processor = SpatialProcessor()
 
-        # Run each radius as an independent cumulative buffer + aggregation
-        analyses = []  # list of (radius_miles, results, metadata)
-        for radius_miles in radii_miles:
-            # Convert miles to meters (1 mile = 1609.34 meters)
-            radius_meters = radius_miles * 1609.34
-            print(f"Creating buffer: {radius_miles} miles = {radius_meters:.2f} meters")
-            buffer_geom = processor.create_buffer(
-                self.selected_point,
-                radius_meters,
-                layer.crs()
-            )
+        # Build the analysis geometry for each area (buffer or drive-time isochrone).
+        # Each geometry is the FULL cumulative area, so aggregating each one
+        # independently gives cumulative totals directly (no ring subtraction).
+        try:
+            if mode == 'drivetime':
+                areas = self._build_drive_time_areas(area_values, layer)
+                area_unit = 'min'
+            else:
+                areas = self._build_radius_areas(area_values, processor, layer)
+                area_unit = 'mi'
+        except RoutingError as e:
+            QMessageBox.warning(self.dlg, "Drive-Time Error", str(e))
+            return
 
-            print(f"Aggregating demographic data for {radius_miles} mi radius...")
+        if not areas:
+            return
+
+        # Aggregate demographics for each analysis area (common to both modes)
+        analyses = []  # list of (area_value, results, metadata)
+        for area_value, geom, geom_crs in areas:
+            print(f"Aggregating demographic data for area {area_value} ({area_unit})...")
             results, metadata = processor.aggregate_demographics(
                 layer,
-                buffer_geom,
-                layer.crs(),
+                geom,
+                geom_crs,
                 variables,
                 package
             )
 
-            print(f"✓ Aggregation complete for {radius_miles} mi")
+            print(f"✓ Aggregation complete for {area_value} {area_unit}")
             print(f"  Block groups processed: {metadata['block_groups_processed']}")
             print(f"  Block groups intersecting: {metadata['block_groups_intersecting']}")
 
-            analyses.append((radius_miles, results, metadata))
+            analyses.append((area_value, results, metadata))
 
-        # Display results for all radii
-        self.display_report_results(analyses, package)
+        # Display results for all areas
+        self.display_report_results(analyses, package, area_unit)
 
     def point_selected(self, point):
         """
@@ -437,14 +605,15 @@ class DemoReports:
         # Deactivate the point tool
         self.iface.mapCanvas().unsetMapTool(self.point_tool)
         
-    def display_report_results(self, analyses, package):
+    def display_report_results(self, analyses, package, area_unit='mi'):
         """
         Display aggregated demographic results and offer to save as PDF.
 
         Args:
-            analyses: list[tuple] - (radius_miles, results, metadata) for each radius,
+            analyses: list[tuple] - (area_value, results, metadata) for each area,
                 sorted ascending
             package: str - Package name
+            area_unit: str - 'mi' for radius miles, 'min' for drive-time minutes
         """
         from qgis.PyQt.QtWidgets import QMessageBox
 
@@ -494,7 +663,8 @@ class DemoReports:
                         package,
                         (self.selected_point.x(), self.selected_point.y()),
                         VARIABLE_CATEGORIES,
-                        VARIABLE_DEFINITIONS
+                        VARIABLE_DEFINITIONS,
+                        area_unit
                     )
 
                     print(f"✓ PDF report saved to: {filename}")
@@ -540,28 +710,31 @@ class DemoReports:
             text_browser = QTextBrowser()
             text_browser.setOpenExternalLinks(False)
 
-            html = self._build_html_report(analyses, package)
+            html = self._build_html_report(analyses, package, area_unit)
             text_browser.setHtml(html)
 
             layout.addWidget(text_browser)
             dialog.setLayout(layout)
             dialog.exec()
 
-    def _build_html_report(self, analyses, package):
+    def _build_html_report(self, analyses, package, area_unit='mi'):
         """
-        Build HTML formatted report from results, with one column per radius.
+        Build HTML formatted report from results, with one column per analysis area.
 
         Args:
-            analyses: list[tuple] - (radius_miles, results, metadata) for each radius,
+            analyses: list[tuple] - (area_value, results, metadata) for each area,
                 sorted ascending
             package: str - Package name
+            area_unit: str - 'mi' for radius miles, 'min' for drive-time minutes
 
         Returns:
             str - HTML formatted report
         """
         from .package_config import VARIABLE_CATEGORIES, VARIABLE_DEFINITIONS
+        from .formatting_utils import format_area_label, format_area_caption
 
-        column_labels = [f"{radius_miles:.2f} mi" for radius_miles, _, _ in analyses]
+        column_labels = [format_area_label(area_value, area_unit) for area_value, _, _ in analyses]
+        areas_heading = "Analysis Drive Times" if area_unit == 'min' else "Analysis Radii"
 
         html = f"""
         <html>
@@ -585,15 +758,14 @@ class DemoReports:
 
             <div class="metadata">
                 <strong>Package:</strong> {package}<br>
-                <strong>Analysis Radii:</strong> {', '.join(column_labels)}
+                <strong>{areas_heading}:</strong> {', '.join(column_labels)}
             </div>
         """
 
-        for radius_miles, results, metadata in analyses:
-            radius_km = radius_miles * 1.60934
+        for area_value, results, metadata in analyses:
             html += f"""
             <div class="metadata">
-                <strong>{radius_miles:.2f} mi ({radius_km:.2f} km):</strong>
+                <strong>{format_area_caption(area_value, area_unit)}:</strong>
                 Analysis Area {metadata.get('total_analysis_area_sqm', 0)/1000000:.2f} sq km |
                 Block Groups Processed: {metadata.get('block_groups_processed', 0)} |
                 Block Groups Intersecting: {metadata.get('block_groups_intersecting', 0)}
@@ -831,8 +1003,26 @@ class DemoReports:
             self.dlg.generateReportButton.clicked.connect(self.generate_point_report)
             self.dlg.generateDatafillButton.clicked.connect(self.generate_datafill)
             self.dlg.browseButton.clicked.connect(self.browse_output_file)
-            self.dlg.closeButton.clicked.connect(self.dlg.close) 
-        
+            self.dlg.closeButton.clicked.connect(self.dlg.close)
+
+            # Drive-time (Phase 2) wiring: analysis-type toggle + routing server URL
+            saved_url = QSettings().value(SETTINGS_KEY_VALHALLA_URL, "", type=str)
+            if not saved_url:
+                # An install may ship a pre-configured server in default_server.txt.
+                # The public/open-source build ships WITHOUT this file, so it stays
+                # un-set (each user opts in). Brad's install includes it.
+                seed = self._read_default_server_seed()
+                if seed:
+                    saved_url = seed
+                    QSettings().setValue(SETTINGS_KEY_VALHALLA_URL, seed)
+            self.dlg.routingServerLineEdit.setText(saved_url)
+            self.dlg.routingServerLineEdit.editingFinished.connect(self._save_routing_server)
+            self.dlg.analysisTypeComboBox.currentIndexChanged.connect(
+                self._on_analysis_type_changed
+            )
+            # Apply initial labels/enabled-state for the default (radius) mode
+            self._on_analysis_type_changed()
+
         # Populate layer combo boxes with current layers
         self.populate_layer_combos()
         

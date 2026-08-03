@@ -9,7 +9,9 @@ Professional demographic reporting plugin for QGIS. Generate reports and datafil
 
 ### Point Reports
 - Click anywhere on the map to select a location
-- Specify up to 3 radii (in miles) for cumulative analysis rings — e.g. 1, 3, and 5 miles, each including everything inside the smaller radii
+- Choose your analysis type:
+  - **Radius (miles)** — up to 3 cumulative rings (e.g. 1, 3, and 5 miles)
+  - **Drive time (minutes)** — up to 3 cumulative drive-time areas (e.g. 5, 10, and 15 minutes) via a [Valhalla](https://github.com/valhalla/valhalla) routing server (see [Drive-Time Reports](#drive-time-reports))
 - Generate professional PDF reports with:
   - Proper formatting (currency, percentages, years)
   - Custom branding (logo and company colors)
@@ -94,11 +96,39 @@ Your demographic data should be joined to a block group geography layer:
 2. Select the **Point Report** tab
 3. Choose your data package tier
 4. Select your block group layer from the dropdown
-5. Click **Select Point on Map**
-6. Click anywhere on the map
-7. Enter Radius 1 in miles (e.g., `1.0` for 1 mile). Optionally enter Radius 2 and/or Radius 3 for additional cumulative rings (e.g., `3.0`, `5.0`) — each radius must be larger than the last
-8. Click **Generate Report**
-9. Choose to save as PDF or view in browser — results are shown side by side, one column per radius
+5. Leave **Analysis type** on **Radius (miles)** (the default)
+6. Click **Select Point on Map**
+7. Click anywhere on the map
+8. Enter Radius 1 in miles (e.g., `1.0` for 1 mile). Optionally enter Radius 2 and/or Radius 3 for additional cumulative rings (e.g., `3.0`, `5.0`) — each radius must be larger than the last
+9. Click **Generate Report**
+10. Choose to save as PDF or view in browser — results are shown side by side, one column per radius
+
+### Drive-Time Reports
+
+Instead of straight-line radii, you can analyze **drive-time areas** (isochrones) — the area reachable by car within a given number of minutes. This uses a [Valhalla](https://github.com/valhalla/valhalla) routing server.
+
+**One-time setup:** enter a Valhalla server URL in the **Drive-time server URL** field on the Point Report tab (it is saved for future sessions). See [Routing server options](#routing-server-options) below.
+
+**To generate a drive-time report:**
+
+1. Set **Analysis type** to **Drive time (minutes)**
+2. Choose your data package and block group layer as usual
+3. Click **Select Point on Map** and click a location
+4. Enter Drive time 1 in minutes (e.g., `5`). Optionally add Drive time 2 and/or 3 (e.g., `10`, `15`) — each must be larger than the last
+5. Click **Generate Report** — one column per drive-time area, side by side
+
+The drive-time polygons feed the same proportional-area aggregation as radii, so results are cumulative in exactly the same way.
+
+#### Routing server options
+
+The routing-server URL is **not set by default**. Choose one of:
+
+- **Run your own Valhalla server** (recommended for regular or bulk use, and required for high volume). See the [Valhalla Docker quick-start](https://github.com/gis-ops/docker-valhalla). Point the plugin at your own server's URL (e.g. `http://localhost:8002`).
+- **Use the public FOSSGIS demo server** (`https://valhalla1.openstreetmap.de`) for light, personal use. This is a free, volunteer-funded service with a **fair-use limit of ~1 request per second**. Please read and respect the [current usage policy](https://valhalla.github.io/valhalla/#demo-server). Do **not** point automated/bulk workflows at it, and do not redistribute this plugin pre-configured to use it for other people — run your own server for anything beyond occasional personal reports.
+
+This plugin identifies its requests with an `X-Client-Id` header and throttles itself to at most one routing request per second.
+
+**Attribution:** Drive-time areas are derived from © OpenStreetMap contributors (road network, ODbL) via the Valhalla routing engine, hosted by FOSSGIS e.V. when the public demo server is used. This attribution is printed on drive-time reports.
 
 ### Generating a Datafill
 
@@ -305,6 +335,11 @@ Special thanks to:
 
 ## Changelog
 
+### Version 1.2.0 (2026-08-03)
+- Point reports can now use **drive-time areas** (Valhalla isochrones) as an alternative to radii — up to 3 cumulative drive times, side by side
+- Routing-server URL is a configurable setting; ships un-set (opt-in) and self-throttles to respect fair-use limits
+- Drive-time reports include OpenStreetMap/Valhalla/FOSSGIS attribution
+
 ### Version 1.1.0 (2026-08-01)
 - Point reports now support up to 3 radii (cumulative rings) instead of a single radius
 - PDF and in-app reports lay out multi-radius results as side-by-side columns
@@ -323,7 +358,6 @@ Special thanks to:
 
 Future enhancements may include:
 - Bulk PDF reports
-- Drive-time isochrones (via Valhalla) as an alternative to radius-based rings
 - Multiple output format options
 - Bulk processing from point list
 - Comparison reports between areas

@@ -28,5 +28,8 @@ test_data/
 *.csv
 *.gpkg
 
-# Personal
+# Personal / per-install config (keep OUT of the public repo)
 logo.png
+# Pre-configured drive-time server for a specific install. The public build must
+# ship WITHOUT this so it does not default every installer onto a shared server.
+default_server.txt
