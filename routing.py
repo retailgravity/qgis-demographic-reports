@@ -23,8 +23,10 @@ import urllib.error
 
 from qgis.core import QgsGeometry, QgsPointXY
 
-# Identifies this application to the routing server, as published apps are asked to do.
-CLIENT_ID = "retailgravity-qgis-demographic-reports"
+# Identifies this application to the routing server, as published apps are asked to
+# do. Domain-style form matches the FOSSGIS X-Client-Id example (e.g. newroutingapp.io);
+# this exact value is quoted in the courtesy notice posted to Valhalla Discussions.
+CLIENT_ID = "qgis-demographic-reports.retailgravity.com"
 
 # Minimum seconds between outbound routing requests (fair-use: <= 1 request/second).
 _MIN_REQUEST_INTERVAL = 1.0
