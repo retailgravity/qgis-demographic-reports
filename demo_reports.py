@@ -901,7 +901,7 @@ class DemoReports:
             total_features,
             self.dlg
         )
-        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setWindowTitle("Generating Datafill")
         
         # Prepare output data
