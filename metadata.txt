@@ -3,7 +3,7 @@ name=US Demographic Reports
 qgisMinimumVersion=3.40
 qgisMaximumVersion=4.99
 description=Generate professional demographic reports and datafills from block group data with proportional area allocation
-version=1.1.0
+version=1.2.0
 author=Retail Gravity
 email=brad@retailgravity.com
 
@@ -26,6 +26,11 @@ server=False
 external_deps=reportlab
 
 changelog=
+    1.2.0 - Drive-time reports
+        - Point reports can use drive-time areas (Valhalla isochrones) instead of radii, up to 3 cumulative drive times
+        - Configurable routing-server URL (ships un-set / opt-in); self-throttles to respect fair-use limits
+        - Drive-time reports include OpenStreetMap/Valhalla/FOSSGIS attribution
+
     1.1.0 - Multi-radius point reports
         - Point reports support up to 3 radii (cumulative rings) instead of a single radius
         - PDF and in-app reports lay out multi-radius results as side-by-side columns

@@ -76,6 +76,31 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_4">
           <item>
+           <layout class="QHBoxLayout" name="analysisTypeLayout">
+            <item>
+             <widget class="QLabel" name="analysisTypeLabel">
+              <property name="text">
+               <string>Analysis type:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="analysisTypeComboBox">
+              <item>
+               <property name="text">
+                <string>Radius (miles)</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Drive time (minutes)</string>
+               </property>
+              </item>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
            <widget class="QLabel" name="label_3">
             <property name="text">
              <string>Click map to select location:</string>
@@ -144,6 +169,24 @@
              <widget class="QLineEdit" name="radius3LineEdit">
               <property name="placeholderText">
                <string>e.g. 5</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="routingServerLayout">
+            <item>
+             <widget class="QLabel" name="routingServerLabel">
+              <property name="text">
+               <string>Drive-time server URL:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="routingServerLineEdit">
+              <property name="placeholderText">
+               <string>https://your-valhalla-server (see README)</string>
               </property>
              </widget>
             </item>

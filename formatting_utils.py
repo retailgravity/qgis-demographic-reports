@@ -9,6 +9,38 @@ Created on Tue Jan 27 18:38:16 2026
 Formatting and rounding utilities for demographic data.
 """
 
+def format_area_label(value, area_unit):
+    """
+    Short column label for an analysis area.
+
+    Args:
+        value: float - The area size (miles for radii, minutes for drive times)
+        area_unit: str - 'mi' for radius miles, 'min' for drive-time minutes
+
+    Returns:
+        str - e.g. "1.00 mi" or "10 min"
+    """
+    if area_unit == 'min':
+        return f"{value:.0f} min"
+    return f"{value:.2f} mi"
+
+
+def format_area_caption(value, area_unit):
+    """
+    Longer caption for an analysis area (adds km for radii, "drive" for times).
+
+    Args:
+        value: float - The area size (miles for radii, minutes for drive times)
+        area_unit: str - 'mi' for radius miles, 'min' for drive-time minutes
+
+    Returns:
+        str - e.g. "1.00 mi (1.61 km)" or "10 min drive"
+    """
+    if area_unit == 'min':
+        return f"{value:.0f} min drive"
+    return f"{value:.2f} mi ({value * 1.60934:.2f} km)"
+
+
 def round_value(variable_name, value):
     """
     Round a value according to variable-specific rules.
