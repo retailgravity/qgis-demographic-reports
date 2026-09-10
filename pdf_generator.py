@@ -17,8 +17,8 @@ number of analysis areas (radii or drive times):
                columns), then full-width category tables with one value column
                per area, read side by side.
 
-A branded header (logo + accent rule) and a footer with page numbers are painted
-on every page by an onPage canvas callback.
+A branded header (centered logo + a navy rule) and a footer with page numbers are
+painted on every page by an onPage canvas callback.
 """
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -179,26 +179,23 @@ class DemographicPDFGenerator:
     # -- page chrome (header + footer), painted on every page -----------------
     def _draw_chrome(self, canvas, doc):
         canvas.saveState()
-        # Logo, left-aligned in the header band
+        # Logo, centered in the header band
         if self.logo_path and os.path.exists(self.logo_path):
             try:
                 img = ImageReader(self.logo_path)
                 iw, ih = img.getSize()
                 h = 34.0
                 w = iw * (h / ih)
-                canvas.drawImage(img, MARGIN, PAGE_H - MARGIN - h + 2,
+                canvas.drawImage(img, (PAGE_W - w) / 2.0, PAGE_H - MARGIN - h + 2,
                                  width=w, height=h, mask='auto',
                                  preserveAspectRatio=True)
             except Exception as e:
                 print(f"Warning: Could not load logo: {e}")
-        # Header rule: navy full-width line with a short accent underline
+        # Header rule: a single navy full-width line under the logo
         rule_y = PAGE_H - MARGIN - HEADER_H + 8
         canvas.setStrokeColor(NAVY)
         canvas.setLineWidth(1.4)
         canvas.line(MARGIN, rule_y, PAGE_W - MARGIN, rule_y)
-        canvas.setStrokeColor(self.accent)
-        canvas.setLineWidth(1.4)
-        canvas.line(MARGIN, rule_y - 1.6, MARGIN + 120, rule_y - 1.6)
         # Footer
         canvas.setStrokeColor(LGREY)
         canvas.setLineWidth(0.75)
