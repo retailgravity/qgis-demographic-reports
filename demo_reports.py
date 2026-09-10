@@ -51,6 +51,9 @@ import os.path
 # (Brad's own copy is pre-set to the public FOSSGIS server).
 SETTINGS_KEY_VALHALLA_URL = "RetailGravity/DemographicReports/valhalla_url"
 
+# Optional custom report logo. Empty means "use the bundled Retail Gravity logo".
+SETTINGS_KEY_LOGO_PATH = "RetailGravity/DemographicReports/logo_path"
+
 class DemoReports:
     """QGIS Plugin Implementation."""
 
@@ -368,6 +371,39 @@ class DemoReports:
         url = self.dlg.routingServerLineEdit.text().strip()
         QSettings().setValue(SETTINGS_KEY_VALHALLA_URL, url)
 
+    # -- report logo ----------------------------------------------------------
+    def _default_logo_path(self):
+        """Path to the bundled Retail Gravity logo, or None if it is missing."""
+        default_logo = os.path.join(self.plugin_dir, "logo.png")
+        return default_logo if os.path.exists(default_logo) else None
+
+    def _current_logo_path(self):
+        """
+        Logo to use on the report: the custom one chosen in the dialog if it is
+        set and still exists, otherwise the bundled Retail Gravity logo.
+        """
+        custom = QSettings().value(SETTINGS_KEY_LOGO_PATH, "", type=str)
+        if custom and os.path.exists(custom):
+            return custom
+        return self._default_logo_path()
+
+    def _browse_logo(self):
+        """Let the user pick a custom report logo and remember the choice."""
+        filename, _filter = QFileDialog.getOpenFileName(
+            self.dlg,
+            "Select Report Logo",
+            "",
+            "Image Files (*.png *.jpg *.jpeg)"
+        )
+        if filename:
+            QSettings().setValue(SETTINGS_KEY_LOGO_PATH, filename)
+            self.dlg.logoLineEdit.setText(filename)
+
+    def _reset_logo(self):
+        """Clear the custom logo so reports use the default Retail Gravity logo."""
+        QSettings().setValue(SETTINGS_KEY_LOGO_PATH, "")
+        self.dlg.logoLineEdit.clear()
+
     def _read_default_server_seed(self):
         """
         Return a pre-configured routing-server URL shipped with this install, or "".
@@ -644,11 +680,9 @@ class DemoReports:
                 try:
                     from .package_config import VARIABLE_CATEGORIES, VARIABLE_DEFINITIONS
 
-                    # CUSTOMIZE THESE VALUES FOR YOUR BRANDING
-                    # Put your logo file in the plugin directory, or use full path
-                    logo_path = os.path.join(self.plugin_dir, "logo.png")  # Change to your logo filename
-                    if not os.path.exists(logo_path):
-                        logo_path = None  # If logo doesn't exist, don't use it
+                    # Logo: a custom one chosen in the dialog if set (e.g. a
+                    # client's logo), otherwise the bundled Retail Gravity logo.
+                    logo_path = self._current_logo_path()
 
                     generator = DemographicPDFGenerator(
                         logo_path=logo_path,
@@ -904,10 +938,25 @@ class DemoReports:
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setWindowTitle("Generating Datafill")
         
+        # Every field from the input polygon layer is carried through to the
+        # output, so the datafilled CSV is the original attribute table with the
+        # demographic columns appended (previously only an ID was kept).
+        input_field_names = [f.name() for f in target_layer.fields()]
+        has_id_field = 'id' in [name.lower() for name in input_field_names]
+
+        # 'target_id' stays as a stable, always-present join key. Map each
+        # demographic variable to an output column that never collides with (or
+        # silently overwrites) an original input field or the key column.
+        reserved = set(input_field_names) | {'target_id'}
+        demo_columns = {
+            var: (var if var not in reserved else f"{var}_demo")
+            for var in variables
+        }
+
         # Prepare output data
         output_rows = []
         total_intersecting = 0
-        
+
         # Process each target feature
         for idx, target_feature in enumerate(target_features):
             # Update progress
@@ -934,19 +983,24 @@ class DemoReports:
             
             # Create output row
             row = {}
-            
-            # Add target feature ID if it has one
-            if 'id' in [f.name().lower() for f in target_layer.fields()]:
-                row['target_id'] = target_feature['id']
-            else:
-                row['target_id'] = target_feature.id()
-            
+
+            # Carry every original input field through unchanged
+            for fname in input_field_names:
+                row[fname] = target_feature[fname]
+
+            # Stable join key: the real 'id' field if present, otherwise the
+            # feature's internal id. Skip if the layer already has its own
+            # 'target_id' field (it was carried through above).
+            if 'target_id' not in input_field_names:
+                row['target_id'] = target_feature['id'] if has_id_field \
+                    else target_feature.id()
+
             # Add all variable values with proper rounding
             for var in variables:
                 value = results.get(var, 0.0)
                 # Apply rounding rules
-                row[var] = format_value_for_csv(var, value)
-            
+                row[demo_columns[var]] = format_value_for_csv(var, value)
+
             output_rows.append(row)
         
         # Close progress dialog
@@ -960,8 +1014,11 @@ class DemoReports:
                 # Write metadata as comments at the top
                 package = self.dlg.packageComboBoxDatafill.currentText()
                 
-                # Create header with target_id + all variables
-                fieldnames = ['target_id'] + variables
+                # Header: all original input fields, then the join key, then the
+                # demographic variables (under their collision-safe names).
+                key_col = [] if 'target_id' in input_field_names else ['target_id']
+                fieldnames = (input_field_names + key_col
+                              + [demo_columns[v] for v in variables])
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 
                 writer.writeheader()
@@ -1022,6 +1079,12 @@ class DemoReports:
             )
             # Apply initial labels/enabled-state for the default (radius) mode
             self._on_analysis_type_changed()
+
+            # Report logo: show any saved custom logo and wire the buttons
+            saved_logo = QSettings().value(SETTINGS_KEY_LOGO_PATH, "", type=str)
+            self.dlg.logoLineEdit.setText(saved_logo)
+            self.dlg.logoBrowseButton.clicked.connect(self._browse_logo)
+            self.dlg.logoResetButton.clicked.connect(self._reset_logo)
 
         # Populate layer combo boxes with current layers
         self.populate_layer_combos()

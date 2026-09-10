@@ -196,6 +196,39 @@
         </widget>
        </item>
        <item>
+        <widget class="QGroupBox" name="groupBox_logo">
+         <property name="title">
+          <string>Report Logo</string>
+         </property>
+         <layout class="QHBoxLayout" name="logoLayout">
+          <item>
+           <widget class="QLineEdit" name="logoLineEdit">
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="placeholderText">
+             <string>Retail Gravity logo (default)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="logoBrowseButton">
+            <property name="text">
+             <string>Browse...</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="logoResetButton">
+            <property name="text">
+             <string>Use Default</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <widget class="QPushButton" name="generateReportButton">
          <property name="font">
           <font>
